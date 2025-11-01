@@ -1,0 +1,284 @@
+{
+  "queries": [
+    {
+      "name": "Проверка LDAP подписи",
+      "description": "Отсутсвие LDAP signing на контроллерах домена позволяют проводить некоторые типы Relay атак",
+	  "type": "Nodes",
+	  "selfcheck": true,
+      "query": "MATCH (m:Computer) WHERE m.isdc = TRUE AND m.ldapsigning = FALSE RETURN m.name"
+    },
+    {
+      "name": "Проверка MachineAccountQuota",
+      "description": "Параметр machineaccountquota определяет сколько объектов компьютер может создавать пользователь, параметр также зависит от прав SeMiachineAccountQuotaPrivelege",
+	  "type": "Nodes",
+	  "selfcheck": true,
+      "query": "MATCH (m:Domain) RETURN m.machineaccountquota"
+    },
+    {
+      "name": "Атака Kerberoasting",
+      "description": "Пользователи с SPN, для которых может быть проведена атака kerberoasting",
+	  "type": "Nodes",
+	  "selfcheck": false,
+      "query": "MATCH (u:User {hasspn:true}) WHERE NOT u.name STARTS WITH 'KRBTGT' RETURN u.name"
+    },
+	{
+      "name": "Атака AsRepRoasting",
+      "description": "Пользователи с включенным флагом не требовать пре-аутентификацию",
+	  "type": "Nodes",
+	  "selfcheck": false,
+      "query": "MATCH (u:User {dontreqpreauth: true}) RETURN u.name"
+    },
+	{
+      "name": "Контроллеры домена, позволяющие NTLMv1 или LM аутентификацию",
+      "description": "Выполнение техники NTLM Downgrade для получения NTLMv1 или выполнения атак NTLM Relay",
+	  "type": "Nodes",
+	  "selfcheck": true,
+      "query": "MATCH (dc:Computer) WHERE dc.isdc = true AND (dc.lmcompatibilitylevel IS NOT NULL AND dc.lmcompatibilitylevel <= 2) RETURN dc.name"
+    },
+	{
+      "name": "Компьютеры, позволяющие NTLMv1 или LM аутентификацию",
+      "description": "Выполнение техники NTLM Downgrade для получения NTLMv1 или выполнения атак NTLM Relay",
+	  "type": "Nodes",
+	  "selfcheck": true,
+      "query": "MATCH (dc:Computer) WHERE dc.isdc = FALSE AND (dc.lmcompatibilitylevel IS NOT NULL AND dc.lmcompatibilitylevel <= 2) RETURN dc.name"
+    },
+	{
+      "name": "Пароли в атрибутах *password пользователей",
+      "description": "Администраторы могут размещать пароли в атрибутах `userpassword`, `unixpassword`, `unicodepassword` и `sfupassword` пользователей",
+	  "type": "Nodes",
+	  "selfcheck": false,
+      "query": "MATCH (u:User) WHERE u.userpassword IS NOT NULL OR u.unixpassword IS NOT NULL OR u.unicodepassword IS NOT NULL OR u.sfupassword IS NOT NULL RETURN u.name"
+    },
+	{
+      "name": "Пользователи с флагом PASSWD_NOTREQD",
+      "description": "Некоторым пользовательским учтеным записям может быть установлен флаг `PASSWD_NOTREQD` это означает, что для такой учетной записи может быть установлен пустой пароль. Но это право а не требование",
+	  "type": "Nodes",
+	  "selfcheck": false,
+      "query": "MATCH (n:User) WHERE n.passwordnotreqd = TRUE RETURN n.name"
+    },
+	{
+      "name": "Компьютеры с флагом PASSWD_NOTREQD",
+      "description": "Некоторым компьютерным учтеным записям может быть установлен флаг `PASSWD_NOTREQD` это означает, что для такой учетной записи может быть установлен пустой пароль. Может быть указателем на технику pre2k",
+	  "type": "Nodes",
+	  "selfcheck": false,
+      "query": "MATCH (n:Computer) WHERE n.passwordnotreqd = TRUE RETURN n.name"
+    },
+	{
+      "name": "Компьютеры с неограниченным делегированием Kerberos",
+      "description": "Компютеры с неограниченным делегированием могут использоваться в атаках на получение билетов TGT",
+	  "type": "Nodes",
+	  "selfcheck": false,
+      "query": "MATCH (n:Computer {unconstraineddelegation:TRUE, isdc:FALSE}) RETURN n.name"
+    },
+    {
+      "name": "ACL от Domain Computers до любого объекта",
+      "description": "Получение ACL от группы Domain Computers до любого обекта без Enroll",
+	  "type": "Path",
+	  "selfcheck": false,
+      "query": "MATCH p = (g:Group)-[r]->(n) WHERE g.objectid ENDS WITH \"-515\" AND  r.isacl=true AND type(r) <> 'Enroll' RETURN REDUCE(s=nodes(p)[0].name, i IN RANGE(0, SIZE(relationships(p))-1) | s + '-' + type(relationships(p)[i]) + '->' + nodes(p)[i+1].name) AS pathDescription ORDER BY length(p) LIMIT 1000"
+    },
+	{
+      "name": "ACL от Domain Users до любого объекта",
+      "description": "Получение ACL от группы Domain Users до любого обекта без Enroll",
+	  "type": "Path",
+	  "selfcheck": false,
+      "query": "MATCH p = (g:Group)-[r]->(n) WHERE g.objectid ENDS WITH \"-513\" AND  r.isacl=true AND type(r) <> 'Enroll' RETURN REDUCE(s=nodes(p)[0].name, i IN RANGE(0, SIZE(relationships(p))-1) | s + '-' + type(relationships(p)[i]) + '->' + nodes(p)[i+1].name) AS pathDescription ORDER BY length(p) LIMIT 1000"
+    },
+	{
+      "name": "ACL от Authenticated Users до любого объекта",
+      "description": "Получение ACL от группы Authenticated Users до любого обекта без Enroll и CertTemplate",
+	  "type": "Path",
+	  "selfcheck": false,
+      "query": "MATCH p = (g:Group)-[r]->(n) WHERE g.objectid ENDS WITH \"S-1-5-11\" AND  r.isacl=true AND type(r) <> 'Enroll'  AND NOT n:CertTemplate RETURN REDUCE(s=nodes(p)[0].name, i IN RANGE(0, SIZE(relationships(p))-1) | s + '-' + type(relationships(p)[i]) + '->' + nodes(p)[i+1].name) AS pathDescription ORDER BY length(p) LIMIT 1000"
+    },
+	{
+      "name": "ACL от Everyone до любого объекта",
+      "description": "Получение ACL от группы Everyone до любого обекта без Enroll и CertTemplate",
+	  "type": "Path",
+	  "selfcheck": false,
+      "query": "MATCH p = (g:Group)-[r]->(n) WHERE g.objectid ENDS WITH \"S-1-1-0\" AND  r.isacl=true AND type(r) <> 'Enroll'  AND NOT n:CertTemplate RETURN REDUCE(s=nodes(p)[0].name, i IN RANGE(0, SIZE(relationships(p))-1) | s + '-' + type(relationships(p)[i]) + '->' + nodes(p)[i+1].name) AS pathDescription ORDER BY length(p) LIMIT 1000"
+    },
+	{
+      "name": "ACL от Users до любого объекта",
+      "description": "Получение ACL от группы Users до любого обекта без Enroll и CertTemplate",
+	  "type": "Path",
+	  "selfcheck": false,
+      "query": "MATCH p = (g:Group)-[r]->(n) WHERE g.objectid ENDS WITH \"S-1-5-32-545\" AND  r.isacl=true AND type(r) <> 'Enroll'  AND NOT n:CertTemplate RETURN REDUCE(s=nodes(p)[0].name, i IN RANGE(0, SIZE(relationships(p))-1) | s + '-' + type(relationships(p)[i]) + '->' + nodes(p)[i+1].name) AS pathDescription ORDER BY length(p) LIMIT 1000"
+    },
+	{
+      "name": "ACL от Domain Computers до любого объекта через членство в группах",
+      "description": "Получение ACL от группы Domain Computers до любого обекта без Enroll и CertTemplate через членство в группах",
+	  "type": "Path",
+	  "selfcheck": false,
+      "query": "MATCH p = (g1:Group)-[r1:MemberOf*1..]->(g2:Group)-[r2]->(n) WHERE g1.objectid ENDS WITH '-515' AND r2.isacl=true AND type(r2) <> 'Enroll'  AND NOT n:CertTemplate RETURN REDUCE(s=nodes(p)[0].name, i IN RANGE(0, SIZE(relationships(p))-1) | s + '-' + type(relationships(p)[i]) + '->' + nodes(p)[i+1].name) AS pathDescription ORDER BY length(p) LIMIT 1000"
+    },
+	{
+      "name": "ACL от Domain Users до любого объекта через членство в группах",
+      "description": "Получение ACL от группы Domain Users до любого обекта без Enroll и CertTemplate через членство в группах",
+	  "type": "Path",
+	  "selfcheck": false,
+      "query": "MATCH p = (g1:Group)-[r1:MemberOf*1..]->(g2:Group)-[r2]->(n) WHERE g1.objectid ENDS WITH '-513' AND r2.isacl=true AND type(r2) <> 'Enroll'  AND NOT n:CertTemplate RETURN REDUCE(s=nodes(p)[0].name, i IN RANGE(0, SIZE(relationships(p))-1) | s + '-' + type(relationships(p)[i]) + '->' + nodes(p)[i+1].name) AS pathDescription ORDER BY length(p) LIMIT 1000"
+    },
+	{
+      "name": "ACL от Authenticated Users до любого объекта через членство в группах",
+      "description": "Получение ACL от группы Authenticated Users до любого обекта без Enroll и CertTemplate через членство в группах",
+	  "type": "Path",
+	  "selfcheck": false,
+      "query": "MATCH p = (g1:Group)-[r1:MemberOf*1..]->(g2:Group)-[r2]->(n) WHERE g1.objectid ENDS WITH 'S-1-5-11' AND r2.isacl=true AND type(r2) <> 'Enroll'  AND NOT n:CertTemplate RETURN REDUCE(s=nodes(p)[0].name, i IN RANGE(0, SIZE(relationships(p))-1) | s + '-' + type(relationships(p)[i]) + '->' + nodes(p)[i+1].name) AS pathDescription ORDER BY length(p) LIMIT 1000"
+    },
+	{
+      "name": "ACL от Everyone до любого объекта через членство в группах",
+      "description": "Получение ACL от группы Everyone до любого обекта без Enroll и CertTemplate через членство в группах",
+	  "type": "Path",
+	  "selfcheck": false,
+      "query": "MATCH p = (g1:Group)-[r1:MemberOf*1..]->(g2:Group)-[r2]->(n) WHERE g1.objectid ENDS WITH 'S-1-1-0' AND r2.isacl=true AND type(r2) <> 'Enroll'  AND NOT n:CertTemplate RETURN REDUCE(s=nodes(p)[0].name, i IN RANGE(0, SIZE(relationships(p))-1) | s + '-' + type(relationships(p)[i]) + '->' + nodes(p)[i+1].name) AS pathDescription ORDER BY length(p) LIMIT 1000"
+    },
+	{
+      "name": "ACL от Users до любого объекта через членство в группах",
+      "description": "Получение ACL от группы Users до любого обекта без Enroll и CertTemplate через членство в группах",
+	  "type": "Path",
+	  "selfcheck": false,
+      "query": "MATCH p = (g1:Group)-[r1:MemberOf*1..]->(g2:Group)-[r2]->(n) WHERE g1.objectid ENDS WITH 'S-1-5-32-545' AND r2.isacl=true AND type(r2) <> 'Enroll'  AND NOT n:CertTemplate RETURN REDUCE(s=nodes(p)[0].name, i IN RANGE(0, SIZE(relationships(p))-1) | s + '-' + type(relationships(p)[i]) + '->' + nodes(p)[i+1].name) AS pathDescription ORDER BY length(p) LIMIT 1000"
+    },
+	{
+      "name": "Короткий путь от общих групп до группы DOMAIN ADMINS",
+      "description": "Получение путей до группы DOMAIN ADMINS от имени общих доменных групп",
+	  "type": "Path",
+	  "selfcheck": false,
+      "query": "MATCH p = AllShortestPaths((m:Group)-[*]->(n:Group)) WHERE m.objectid =~ '(?i).*(-513|-515|S-1-5-11|S-1-1-0|S-1-5-32-545)' AND n.objectid ENDS WITH '-512' AND NONE(x IN relationships(p) WHERE  type(x)='CrossForestTrust' OR type(x)='DelegatedEnrollmentAgent' OR type(x)='Enroll' OR type(x)='EnrollOnBehalfOf' OR type(x)='EnterpriseCAFor' OR type(x)='ExtendedByPolicy' OR type(x)='GetChanges' OR type(x)='GetChangesAll' OR type(x)='GetChangesInFilteredSet' OR type(x)='GPLink' OR type(x)='HostsCAService' OR type(x)='IssuedSignedBy' OR type(x)='LocalToComputer' OR type(x)='ManageCA' OR type(x)='ManageCertificates' OR type(x)='MemberOfLocalGroup' OR type(x)='NTAuthStoreFor' OR type(x)='OIDGroupLink' OR type(x)='OwnsRaw' OR type(x)='PublishedTo' OR type(x)='RemoteInteractiveLogonPrivilege' OR type(x)='RootCAFor' OR type(x)='TrustedForNTAuth' OR type(x)='WriteOwnerRaw' OR type(x)='WritePKIEnrollmentFlag' OR type(x)='WritePKINameFlag') AND NONE(x IN nodes(p) WHERE x:Domain) RETURN REDUCE(s=nodes(p)[0].name, i IN RANGE(0, SIZE(relationships(p))-1) | s + '-' + type(relationships(p)[i]) + '->' + nodes(p)[i+1].name) AS pathDescription ORDER BY length(p) LIMIT 1000"
+    },
+	{
+      "name": "Короткий путь от общих групп до группы DOMAIN ADMINS (все связи)",
+      "description": "Получение путей до группы DOMAIN ADMINS от имени общих доменных групп",
+	  "type": "Path",
+	  "selfcheck": false,
+      "query": "MATCH p = AllShortestPaths((m:Group)-[*]->(n:Group)) WHERE m.objectid =~ '(?i).*(-513|-515|S-1-5-11|S-1-1-0|S-1-5-32-545)' AND n.objectid ENDS WITH '-512' RETURN REDUCE(s=nodes(p)[0].name, i IN RANGE(0, SIZE(relationships(p))-1) | s + '-' + type(relationships(p)[i]) + '->' + nodes(p)[i+1].name) AS pathDescription ORDER BY length(p) LIMIT 1000"
+    },
+	{
+      "name": "Короткий путь от общих групп до группы ENTERPRISE ADMINS",
+      "description": "Получение путей до группы ENTERPRISE ADMINS от имени общих доменных групп",
+	  "type": "Path",
+	  "selfcheck": false,
+      "query": "MATCH p = AllShortestPaths((m:Group)-[*]->(n:Group)) WHERE m.objectid =~ '(?i).*(-513|-515|S-1-5-11|S-1-1-0|S-1-5-32-545)' AND n.objectid ENDS WITH '-519' AND NONE(x IN relationships(p) WHERE  type(x)='CrossForestTrust' OR type(x)='DelegatedEnrollmentAgent' OR type(x)='Enroll' OR type(x)='EnrollOnBehalfOf' OR type(x)='EnterpriseCAFor' OR type(x)='ExtendedByPolicy' OR type(x)='GetChanges' OR type(x)='GetChangesAll' OR type(x)='GetChangesInFilteredSet' OR type(x)='GPLink' OR type(x)='HostsCAService' OR type(x)='IssuedSignedBy' OR type(x)='LocalToComputer' OR type(x)='ManageCA' OR type(x)='ManageCertificates' OR type(x)='MemberOfLocalGroup' OR type(x)='NTAuthStoreFor' OR type(x)='OIDGroupLink' OR type(x)='OwnsRaw' OR type(x)='PublishedTo' OR type(x)='RemoteInteractiveLogonPrivilege' OR type(x)='RootCAFor' OR type(x)='TrustedForNTAuth' OR type(x)='WriteOwnerRaw' OR type(x)='WritePKIEnrollmentFlag' OR type(x)='WritePKINameFlag') AND NONE(x IN nodes(p) WHERE x:Domain) RETURN REDUCE(s=nodes(p)[0].name, i IN RANGE(0, SIZE(relationships(p))-1) | s + '-' + type(relationships(p)[i]) + '->' + nodes(p)[i+1].name) AS pathDescription ORDER BY length(p) LIMIT 1000"
+    },
+	{
+      "name": "Короткий путь от общих групп до группы ENTERPRISE ADMINS (все связи)",
+      "description": "Получение путей до группы ENTERPRISE ADMINS от имени общих доменных групп",
+	  "type": "Path",
+	  "selfcheck": false,
+      "query": "MATCH p = AllShortestPaths((m:Group)-[*]->(n:Group)) WHERE m.objectid =~ '(?i).*(-513|-515|S-1-5-11|S-1-1-0|S-1-5-32-545)' AND n.objectid ENDS WITH '-519' RETURN REDUCE(s=nodes(p)[0].name, i IN RANGE(0, SIZE(relationships(p))-1) | s + '-' + type(relationships(p)[i]) + '->' + nodes(p)[i+1].name) AS pathDescription"
+    },
+	{
+      "name": "Короткий путь от общих групп до административных групп ",
+      "description": "Получение путей до группы *ADMIN* или *ADM* от имени общих доменных групп",
+	  "type": "Path",
+	  "selfcheck": false,
+      "query": "MATCH p = AllShortestPaths((m:Group)-[*]->(n:Group)) WHERE m.objectid =~ '(?i).*(-513|-515|S-1-5-11|S-1-1-0|S-1-5-32-545)' AND n.name =~ '(?i).*(admin|adm).*' AND NONE(x IN relationships(p) WHERE  type(x)='CrossForestTrust' OR type(x)='DelegatedEnrollmentAgent' OR type(x)='Enroll' OR type(x)='EnrollOnBehalfOf' OR type(x)='EnterpriseCAFor' OR type(x)='ExtendedByPolicy' OR type(x)='GetChanges' OR type(x)='GetChangesAll' OR type(x)='GetChangesInFilteredSet' OR type(x)='GPLink' OR type(x)='HostsCAService' OR type(x)='IssuedSignedBy' OR type(x)='LocalToComputer' OR type(x)='ManageCA' OR type(x)='ManageCertificates' OR type(x)='MemberOfLocalGroup' OR type(x)='NTAuthStoreFor' OR type(x)='OIDGroupLink' OR type(x)='OwnsRaw' OR type(x)='PublishedTo' OR type(x)='RemoteInteractiveLogonPrivilege' OR type(x)='RootCAFor' OR type(x)='TrustedForNTAuth' OR type(x)='WriteOwnerRaw' OR type(x)='WritePKIEnrollmentFlag' OR type(x)='WritePKINameFlag') AND NONE(x IN nodes(p) WHERE x:Domain) RETURN REDUCE(s=nodes(p)[0].name, i IN RANGE(0, SIZE(relationships(p))-1) | s + '-' + type(relationships(p)[i]) + '->' + nodes(p)[i+1].name) AS pathDescription ORDER BY length(p) LIMIT 1000"
+    },
+	{
+      "name": "Короткий путь от общих групп до административных групп (все связи)",
+      "description": "Получение путей до группы *ADMIN* или *ADM* от имени общих доменных групп",
+	  "type": "Path",
+	  "selfcheck": false,
+      "query": "MATCH p = AllShortestPaths((m:Group)-[*]->(n:Group)) WHERE m.objectid =~ '(?i).*(-513|-515|S-1-5-11|S-1-1-0|S-1-5-32-545)' AND n.name =~ '(?i).*(admin|adm).*'  RETURN REDUCE(s=nodes(p)[0].name, i IN RANGE(0, SIZE(relationships(p))-1) | s + '-' + type(relationships(p)[i]) + '->' + nodes(p)[i+1].name) AS pathDescription ORDER BY length(p) LIMIT 1000"
+    },
+	{
+      "name": "Короткий путь от общих групп до узлов с привилегиями DCSync",
+      "description": "Получение путей от имени общих доменных групп до узлов с привилегиями DCSync позволяют быстро захватить домен",
+	  "type": "Path",
+	  "selfcheck": false,
+      "query": "MATCH (b:Base)-[:DCSync|AllExtendedRights|GenericAll]->(d:Domain) MATCH p = AllShortestPaths((m:Group)-[*]->(b)) WHERE m.objectid =~ '(?i).*(-513|-515|S-1-5-11|S-1-1-0|S-1-5-32-545)' AND NONE(x IN relationships(p) WHERE  type(x)='CrossForestTrust' OR type(x)='DelegatedEnrollmentAgent' OR type(x)='Enroll' OR type(x)='EnrollOnBehalfOf' OR type(x)='EnterpriseCAFor' OR type(x)='ExtendedByPolicy' OR type(x)='GetChanges' OR type(x)='GetChangesAll' OR type(x)='GetChangesInFilteredSet' OR type(x)='GPLink' OR type(x)='HostsCAService' OR type(x)='IssuedSignedBy' OR type(x)='LocalToComputer' OR type(x)='ManageCA' OR type(x)='ManageCertificates' OR type(x)='MemberOfLocalGroup' OR type(x)='NTAuthStoreFor' OR type(x)='OIDGroupLink' OR type(x)='OwnsRaw' OR type(x)='PublishedTo' OR type(x)='RemoteInteractiveLogonPrivilege' OR type(x)='RootCAFor' OR type(x)='TrustedForNTAuth' OR type(x)='WriteOwnerRaw' OR type(x)='WritePKIEnrollmentFlag' OR type(x)='WritePKINameFlag') AND NONE(x IN nodes(p) WHERE x:Domain)  RETURN REDUCE(s=nodes(p)[0].name, i IN RANGE(0, SIZE(relationships(p))-1) | s + ' - [' + type(relationships(p)[i]) + '] -> ' + nodes(p)[i+1].name) AS pathDescription ORDER BY length(p) LIMIT 1000"
+    },
+	{
+      "name": "Короткий путь от имени общих доменных групп до компьютеров с неограниченым делегированием",
+      "description": "Получение путей от имени общих доменных групп до компьютеров с неограниченны делегированием Kerberos",
+	  "type": "Path",
+	  "selfcheck": false,
+      "query": "MATCH p = AllShortestPaths((m:Group)-[*]->(n:Computer {unconstraineddelegation:TRUE, isdc:FALSE})) WHERE m.objectid =~ '(?i).*(-513|-515|S-1-5-11|S-1-1-0|S-1-5-32-545)' AND NONE(x IN relationships(p) WHERE  type(x)='CrossForestTrust' OR type(x)='DelegatedEnrollmentAgent' OR type(x)='Enroll' OR type(x)='EnrollOnBehalfOf' OR type(x)='EnterpriseCAFor' OR type(x)='ExtendedByPolicy' OR type(x)='GetChanges' OR type(x)='GetChangesAll' OR type(x)='GetChangesInFilteredSet' OR type(x)='GPLink' OR type(x)='HostsCAService' OR type(x)='IssuedSignedBy' OR type(x)='LocalToComputer' OR type(x)='ManageCA' OR type(x)='ManageCertificates' OR type(x)='MemberOfLocalGroup' OR type(x)='NTAuthStoreFor' OR type(x)='OIDGroupLink' OR type(x)='OwnsRaw' OR type(x)='PublishedTo' OR type(x)='RemoteInteractiveLogonPrivilege' OR type(x)='RootCAFor' OR type(x)='TrustedForNTAuth' OR type(x)='WriteOwnerRaw' OR type(x)='WritePKIEnrollmentFlag' OR type(x)='WritePKINameFlag') AND NONE(x IN nodes(p) WHERE x:Domain) RETURN REDUCE(s=nodes(p)[0].name, i IN RANGE(0, SIZE(relationships(p))-1) | s + '-' + type(relationships(p)[i]) + '->' + nodes(p)[i+1].name) AS pathDescription ORDER BY length(p) LIMIT 1000"
+    },
+	{
+      "name": "Компьютеры с запущенной службой WebClient",
+      "description": "Компьютеры с запущенной службой WebClietn позволяют использовать техники RBCD и Shadow Credentials",
+	  "type": "Nodes",
+	  "selfcheck": true,
+      "query": "MATCH (c:Computer) WHERE c.iswebclientrunning = TRUE RETURN c.name"
+    },
+	{
+      "name": "Короткие пути от хоста с запущенной службой WebClient до группы DOMAIN ADMINS (эксперементальное RETURN LIMIT 1000)",
+      "description": "Короткий путь позволяет получить доступ к группе DOMAIN ADMINS. Запрос через проверку подписи на LDAP",
+	  "type": "Path",
+	  "selfcheck": false,
+      "query": "MATCH (m:Computer) WHERE m.isdc = TRUE AND m.ldapsigning = FALSE WITH m as dc CALL { WITH dc MATCH p = AllShortestPaths((c)-[*]->(n:Group)) WHERE c.iswebclientrunning = TRUE AND n.objectid ENDS WITH '-512' AND dc IS NOT NULL AND NONE(x IN relationships(p) WHERE  type(x)='CrossForestTrust' OR type(x)='DelegatedEnrollmentAgent' OR type(x)='Enroll' OR type(x)='EnrollOnBehalfOf' OR type(x)='EnterpriseCAFor' OR type(x)='ExtendedByPolicy' OR type(x)='GetChanges' OR type(x)='GetChangesAll' OR type(x)='GetChangesInFilteredSet' OR type(x)='GPLink' OR type(x)='HostsCAService' OR type(x)='IssuedSignedBy' OR type(x)='LocalToComputer' OR type(x)='ManageCA' OR type(x)='ManageCertificates' OR type(x)='MemberOfLocalGroup' OR type(x)='NTAuthStoreFor' OR type(x)='OIDGroupLink' OR type(x)='OwnsRaw' OR type(x)='PublishedTo' OR type(x)='RemoteInteractiveLogonPrivilege' OR type(x)='RootCAFor' OR type(x)='TrustedForNTAuth' OR type(x)='WriteOwnerRaw' OR type(x)='WritePKIEnrollmentFlag' OR type(x)='WritePKINameFlag') AND NONE(x IN nodes(p) WHERE x:Domain) RETURN DISTINCT p } RETURN CASE WHEN dc IS NOT NULL THEN REDUCE(s=nodes(p)[0].name, i IN RANGE(0, SIZE(relationships(p))-1) | s + ' - [' + type(relationships(p)[i]) + '] -> ' + nodes(p)[i+1].name) END AS Result ORDER BY length(p) LIMIT 1000"
+    },
+	{
+      "name": "Короткие пути от хоста с запущенной службой WebClient до узлов High Value (эксперементальное RETURN LIMIT 1000)",
+      "description": "Короткий путь позволяет получить доступ к привелигированным узлам. Запрос через проверку подписи на LDAP",
+	  "type": "Path",
+	  "selfcheck": false,
+      "query": "MATCH (m:Computer) WHERE m.isdc = TRUE AND m.ldapsigning = FALSE WITH m as dc CALL { WITH dc MATCH p = AllShortestPaths((c)-[*]->(n {highvalue:TRUE})) WHERE c.iswebclientrunning = TRUE AND n<>c AND dc IS NOT NULL AND NONE(x IN relationships(p) WHERE  type(x)='CrossForestTrust' OR type(x)='DelegatedEnrollmentAgent' OR type(x)='Enroll' OR type(x)='EnrollOnBehalfOf' OR type(x)='EnterpriseCAFor' OR type(x)='ExtendedByPolicy' OR type(x)='GetChanges' OR type(x)='GetChangesAll' OR type(x)='GetChangesInFilteredSet' OR type(x)='GPLink' OR type(x)='HostsCAService' OR type(x)='IssuedSignedBy' OR type(x)='LocalToComputer' OR type(x)='ManageCA' OR type(x)='ManageCertificates' OR type(x)='MemberOfLocalGroup' OR type(x)='NTAuthStoreFor' OR type(x)='OIDGroupLink' OR type(x)='OwnsRaw' OR type(x)='PublishedTo' OR type(x)='RemoteInteractiveLogonPrivilege' OR type(x)='RootCAFor' OR type(x)='TrustedForNTAuth' OR type(x)='WriteOwnerRaw' OR type(x)='WritePKIEnrollmentFlag' OR type(x)='WritePKINameFlag') AND NONE(x IN nodes(p) WHERE x:Domain) RETURN DISTINCT p } RETURN CASE WHEN dc IS NOT NULL THEN REDUCE(s=nodes(p)[0].name, i IN RANGE(0, SIZE(relationships(p))-1) | s + ' - [' + type(relationships(p)[i]) + '] -> ' + nodes(p)[i+1].name) END AS Result ORDER BY length(p) LIMIT 1000"
+    },
+	{
+      "name": "Проверка связи AdminTo между компьютерами при отключенном smbsigning",
+      "description": "Связь позволяет проводить атаки Relay от одного компьютера на другой",
+	  "type": "Path",
+	  "selfcheck": false,
+      "query": "MATCH p=(n:Computer)-[:AdminTo]->(m:Computer) WHERE m.signingenabled = FALSE OR NOT EXISTS (m.signingenabled) RETURN REDUCE(s=nodes(p)[0].name, i IN RANGE(0, SIZE(relationships(p))-1) | s + ' - [' + type(relationships(p)[i]) + '] -> ' + nodes(p)[i+1].name) AS pathDescription ORDER BY length(p) LIMIT 1000"
+    },
+	{
+      "name": "Проверка связи членства компьютера в локальных группах при отключенном smbsigning",
+      "description": "Связь позволяет проводить атаки Relay от одного компьютера на другой",
+	  "type": "Path",
+	  "selfcheck": false,
+      "query": "MATCH p=(n:Computer)-[:MemberOfLocalGroup]->(m:ADLocalGroup)-[:LocalToComputer]->(d:Computer) WHERE d.signingenabled = FALSE OR NOT EXISTS (d.signingenabled) RETURN REDUCE(s=nodes(p)[0].name, i IN RANGE(0, SIZE(relationships(p))-1) | s + ' - [' + type(relationships(p)[i]) + '] -> ' + nodes(p)[i+1].name) AS pathDescription ORDER BY length(p) LIMIT 1000"
+    },
+	{
+      "name": "Проверка ESC1 от имени общих доменных групп",
+      "description": "Выполнение техники ESC1 от имени общих групп Domain Users, Domain Computers, Users, Authenticated Users, Everyone",
+	  "type": "Path",
+	  "selfcheck": false,
+      "query": "MATCH p = (n:Base)-[:Enroll|GenericAll|AllExtendedRights]->(ct:CertTemplate)-[:PublishedTo]->(:EnterpriseCA) WHERE ct.enrolleesuppliessubject = True AND ct.authenticationenabled = True AND ct.requiresmanagerapproval = False AND (ct.authorizedsignatures = 0 OR ct.schemaversion = 1) AND n.objectid =~ '(?i).*(S-1-5-11|S-1-1-0|S-1-5-32-545|S-1-5-7|-513|-515)$' RETURN REDUCE(s=nodes(p)[0].name, i IN RANGE(0, SIZE(relationships(p))-1) | s + ' - [' + type(relationships(p)[i]) + '] -> ' + nodes(p)[i+1].name) AS pathDescription ORDER BY length(p) LIMIT 1000"
+    },
+	{
+      "name": "Проверка ESC2 от имени общих доменных групп",
+      "description": "Выполнение техники ESC2 от имени общих групп Domain Users, Domain Computers, Users, Authenticated Users, Everyone",
+	  "type": "Path",
+	  "selfcheck": false,
+      "query": "MATCH p = (n:Base)-[:Enroll|GenericAll|AllExtendedRights]->(c:CertTemplate)-[:PublishedTo]->(:EnterpriseCA) WHERE c.requiresmanagerapproval = false AND (c.effectiveekus = [''] OR '2.5.29.37.0' IN c.effectiveekus) AND (c.authorizedsignatures = 0 OR c.schemaversion = 1) AND n.objectid =~ '(?i).*(S-1-5-11|S-1-1-0|S-1-5-32-545|S-1-5-7|-513|-515)$' RETURN REDUCE(s=nodes(p)[0].name, i IN RANGE(0, SIZE(relationships(p))-1) | s + ' - [' + type(relationships(p)[i]) + '] -> ' + nodes(p)[i+1].name) AS pathDescription ORDER BY length(p) LIMIT 1000"
+    },
+	{
+      "name": "Проверка ESC3 от имени общих доменных групп",
+      "description": "Выполнение техники ESC3 от имени общих групп Domain Users, Domain Computers, Users, Authenticated Users, Everyone",
+	  "type": "Path",
+	  "selfcheck": false,
+      "query": "MATCH p = (n:Base)-[:Enroll|GenericAll|AllExtendedRights]->(ct:CertTemplate)-[:PublishedTo]->(:EnterpriseCA) WHERE n.objectid =~ '(?i).*(S-1-5-11|S-1-1-0|S-1-5-32-545|S-1-5-7|-513|-515)$' AND ('1.3.6.1.4.1.311.20.2.1' IN ct.effectiveekus OR '2.5.29.37.0' IN ct.effectiveekus OR SIZE(ct.effectiveekus) = 0)  RETURN REDUCE(s=nodes(p)[0].name, i IN RANGE(0, SIZE(relationships(p))-1) | s + ' - [' + type(relationships(p)[i]) + '] -> ' + nodes(p)[i+1].name) AS pathDescription ORDER BY length(p) LIMIT 1000"
+    },
+	{
+      "name": "Проверка ESC4 от имени общих доменных групп",
+      "description": "Выполнение техники ESC4 от имени общих групп Domain Users, Domain Computers, Users, Authenticated Users, Everyone",
+	  "type": "Path",
+	  "selfcheck": false,
+      "query": "MATCH p = (n:Base)-[:GenericAll|GenericWrite|Owns|WriteOwner|WriteDacl]->(ct:CertTemplate)-[:PublishedTo]->(:EnterpriseCA) WHERE n.objectid =~ '(?i).*(S-1-5-11|S-1-1-0|S-1-5-32-545|S-1-5-7|-513|-515)$' RETURN REDUCE(s=nodes(p)[0].name, i IN RANGE(0, SIZE(relationships(p))-1) | s + ' - [' + type(relationships(p)[i]) + '] -> ' + nodes(p)[i+1].name) AS pathDescription ORDER BY length(p) LIMIT 1000"
+    },
+	{
+      "name": "Короткие пути от общих групп до CA если CA не является DC (ESC5)",
+      "description": "Короткий путь позволяет захватить CA для создания копии корневого сертификата для выполнения техники GoldenCert",
+	  "type": "Path",
+	  "selfcheck": false,
+      "query": "MATCH(ca:EnterpriseCA)<-[:HostsCAService]-(n:Computer) WHERE n.isdc = FALSE MATCH p = AllShortestPaths((m:Group)-[*]->(n)) WHERE m.objectid =~ '(?i).*(-513|-515|S-1-5-11|S-1-1-0|S-1-5-32-545)' AND NONE(x IN relationships(p) WHERE  type(x)='CrossForestTrust' OR type(x)='DelegatedEnrollmentAgent' OR type(x)='Enroll' OR type(x)='EnrollOnBehalfOf' OR type(x)='EnterpriseCAFor' OR type(x)='ExtendedByPolicy' OR type(x)='GetChanges' OR type(x)='GetChangesAll' OR type(x)='GetChangesInFilteredSet' OR type(x)='GPLink' OR type(x)='HostsCAService' OR type(x)='IssuedSignedBy' OR type(x)='LocalToComputer' OR type(x)='ManageCA' OR type(x)='ManageCertificates' OR type(x)='MemberOfLocalGroup' OR type(x)='NTAuthStoreFor' OR type(x)='OIDGroupLink' OR type(x)='OwnsRaw' OR type(x)='PublishedTo' OR type(x)='RemoteInteractiveLogonPrivilege' OR type(x)='RootCAFor' OR type(x)='TrustedForNTAuth' OR type(x)='WriteOwnerRaw' OR type(x)='WritePKIEnrollmentFlag' OR type(x)='WritePKINameFlag') AND NONE(x IN nodes(p) WHERE x:Domain) RETURN REDUCE(s=nodes(p)[0].name, i IN RANGE(0, SIZE(relationships(p))-1) | s + '-' + type(relationships(p)[i]) + '->' + nodes(p)[i+1].name) AS pathDescription ORDER BY length(p) LIMIT 1000"
+    },
+	{
+      "name": "Проверка прав ManageCertificates и ManageCA от имени общих доменных групп (ESC7)",
+      "description": "Выполнение техники ESC7 от имени общих групп Domain Users, Domain Computers, Users, Authenticated Users, Everyone",
+	  "type": "Path",
+	  "selfcheck": false,
+      "query": "MATCH p = (n:Base)-[:ManageCertificates|ManageCA|MemberOf*1..]->(:EnterpriseCA) WHERE n.objectid =~ '(?i).*(S-1-5-11|S-1-1-0|S-1-5-32-545|S-1-5-7|-513|-515)$' RETURN REDUCE(s=nodes(p)[0].name, i IN RANGE(0, SIZE(relationships(p))-1) | s + ' - [' + type(relationships(p)[i]) + '] -> ' + nodes(p)[i+1].name) AS pathDescription ORDER BY length(p) LIMIT 1000"
+    },
+	{
+      "name": "Короткие пути от общих групп до CA если CA не является DC (Все пути)",
+      "description": "Короткий путь позволяет захватить CA для создания копии корневого сертификата для выполнения техники GoldenCert",
+	  "type": "Path",
+	  "selfcheck": false,
+      "query": "MATCH(ca:EnterpriseCA)<-[:HostsCAService]-(n:Computer) WHERE n.isdc = FALSE MATCH p = AllShortestPaths((m:Group)-[*]->(n)) WHERE m.objectid =~ '(?i).*(-513|-515|S-1-5-11|S-1-1-0|S-1-5-32-545)' RETURN REDUCE(s=nodes(p)[0].name, i IN RANGE(0, SIZE(relationships(p))-1) | s + '-' + type(relationships(p)[i]) + '->' + nodes(p)[i+1].name) AS pathDescription ORDER BY length(p) LIMIT 1000"
+    }
+	]
+}
