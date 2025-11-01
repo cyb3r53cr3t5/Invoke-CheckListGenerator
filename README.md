@@ -14,7 +14,7 @@
 # Запуск всех проверок безопасности
 Invoke-CheckListGenerator -dbPassword Qwerty123
 
-# Запуск для проверок от имени скомпрометированных записией
+# Запуск для проверок от имени скомпрометированных записей
 Invoke-CheckListGenerator -dbPassword Qwerty123 -fileName ownedqueries.json
 ```
 
